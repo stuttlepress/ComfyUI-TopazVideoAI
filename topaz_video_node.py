@@ -84,9 +84,9 @@ class TopazVideoAINode:
                 "enable_interpolation": ("BOOLEAN", {"default": False}),
                 "input_fps": ("INT", {"default": 24, "min": 1, "max": 240}),
                 "interpolation_multiplier": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 8.0, "step": 0.5}),
-                "interpolation_model": (["apo-8", "apf-1", "chr-2", "chf-3", "chr-2"], {"default": "apo-8"}),
+                "interpolation_model": (["apo-8", "apf-1", "chr-2", "chf-3"], {"default": "apo-8"}),
                 "use_gpu": ("BOOLEAN", {"default": True}),
-                "topaz_ffmpeg_path": ("STRING", {"default": r"C:\Program Files\Topaz Labs LLC\Topaz Video AI"}),
+                "topaz_ffmpeg_path": ("STRING", {"default": r"C:\Program Files\Topaz Labs LLC\Topaz Video"}),
                 "force_topaz_ffmpeg": ("BOOLEAN", {"default": True}),
                 "save_video": ("BOOLEAN", {"default": False}),
                 "filename_prefix": ("STRING", {"default": "TopazVideo"}),
@@ -342,7 +342,7 @@ class TopazVideoAINode:
                 for params in all_upscale_params:
                     upscale_filters.append(
                         f"tvai_up=model={params['upscale_model']}"
-                        f":scale={params['upscale_factor']}"
+                        f":scale={int(params['upscale_factor'])}"
                         f":estimate=8"
                         f":compression={params['compression']}"
                         f":blend={params['blend']}"
