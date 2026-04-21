@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import glob
 import winreg
@@ -91,7 +92,20 @@ def _discover_models():
     except Exception:
         pass
 
+    def latest_per_family(entries):
+        families = {}
+        for name, is_downloaded in entries:
+            m = re.match(r'^(.+)-(\d+)$', name)
+            if m:
+                family, version = m.group(1), int(m.group(2))
+            else:
+                family, version = name, 0
+            if family not in families or version > families[family][0]:
+                families[family] = (version, name, is_downloaded)
+        return [(name, ok) for _, name, ok in families.values()]
+
     def build_list(entries):
+        entries = latest_per_family(entries)
         ready = sorted(name for name, ok in entries if ok)
         missing = sorted(f"{name} [not downloaded]" for name, ok in entries if not ok)
         return ready + missing
