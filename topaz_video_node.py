@@ -403,7 +403,7 @@ class TopazVideoAINode:
                 shutil.copy2(input_video, output_video)
 
             logger.info("Converting final video back to image batch...")
-            output_frames = self._video_to_batch(current_output, topaz_ffmpeg_path)
+            output_frames = self._video_to_batch(output_video, topaz_ffmpeg_path)
             return (output_frames,)
 
         except Exception as e:
