@@ -292,9 +292,8 @@ class TopazVideoAINode:
                 ]
                 
                 cmd.extend([
-                    "-c:v", "libx264rgb",
-                    "-crf", "0",
-                    "-preset", "ultrafast",
+                    "-c:v", "ffv1",
+                    "-pix_fmt", "rgb24",
                     "-r", str(input_fps),
                     current_output
                 ])
@@ -331,9 +330,8 @@ class TopazVideoAINode:
                 ]
                 
                 cmd.extend([
-                    "-c:v", "libx264rgb",
-                    "-crf", "0",
-                    "-preset", "ultrafast",
+                    "-c:v", "ffv1",
+                    "-pix_fmt", "rgb24",
                     current_output
                 ])
                 
