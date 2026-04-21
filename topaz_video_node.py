@@ -85,6 +85,7 @@ class TopazVideoAINode:
                 "interpolation_model": (["apo-8", "apf-1", "chr-2", "chf-3"], {"default": "apo-8"}),
                 "use_gpu": ("BOOLEAN", {"default": True}),
                 "topaz_ffmpeg_path": ("STRING", {"default": r"C:\Program Files\Topaz Labs LLC\Topaz Video"}),
+                "topaz_model_path": ("STRING", {"default": r"C:\ProgramData\Topaz Labs LLC\Topaz Video\models"}),
             },
             "optional": {
                 "previous_upscale": ("UPSCALE_PARAMS",),
@@ -113,7 +114,13 @@ class TopazVideoAINode:
             frame_paths.append(frame_path)
         return frame_paths
 
-    def _batch_to_video(self, image_batch, output_path, use_gpu, topaz_ffmpeg_path, input_fps=24):
+    def _topaz_env(self, topaz_model_path):
+        env = os.environ.copy()
+        env["TVAI_MODEL_DIR"] = topaz_model_path
+        env["TVAI_MODEL_DATA_DIR"] = topaz_model_path
+        return env
+
+    def _batch_to_video(self, image_batch, output_path, use_gpu, topaz_ffmpeg_path, topaz_model_path, input_fps=24):
         device = torch.device("cuda" if use_gpu and torch.cuda.is_available() else "cpu")
         
         if use_gpu and torch.cuda.is_available():
@@ -166,11 +173,11 @@ class TopazVideoAINode:
             ])
             
             logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
+            result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path))
+
             if result.returncode != 0:
                 raise RuntimeError(f"FFmpeg error: {result.stderr}")
-            
+
             if not os.path.exists(output_path):
                 raise FileNotFoundError(f"Output video not created: {output_path}")
                 
@@ -179,7 +186,7 @@ class TopazVideoAINode:
         finally:
             shutil.rmtree(frame_dir, ignore_errors=True)
 
-    def _video_to_batch(self, video_path, use_gpu, topaz_ffmpeg_path):
+    def _video_to_batch(self, video_path, use_gpu, topaz_ffmpeg_path, topaz_model_path):
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Input video not found: {video_path}")
         
@@ -197,8 +204,8 @@ class TopazVideoAINode:
             ]
             
             logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
+            result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path))
+
             if result.returncode != 0:
                 raise RuntimeError(f"FFmpeg error: {result.stderr}")
             
@@ -237,7 +244,7 @@ class TopazVideoAINode:
     def process_video(self, images, enable_upscale, upscale_factor, upscale_model, compression, blend,
                      enable_interpolation, input_fps, interpolation_multiplier,
                      interpolation_mode, target_fps,
-                     interpolation_model, use_gpu, topaz_ffmpeg_path,
+                     interpolation_model, use_gpu, topaz_ffmpeg_path, topaz_model_path,
                      previous_upscale=None):
         if upscale_model == "thm-2" and upscale_factor != 1.0:
             upscale_factor = 1.0
@@ -249,7 +256,7 @@ class TopazVideoAINode:
         output_video = os.path.join(self.output_dir, f"{operation_id}_output.mp4")
         try:
             logger.info(f"Converting image batch to video with input fps {input_fps}...")
-            self._batch_to_video(images, input_video, use_gpu, topaz_ffmpeg_path, input_fps)
+            self._batch_to_video(images, input_video, use_gpu, topaz_ffmpeg_path, topaz_model_path, input_fps)
             
             current_input = input_video
             current_output = intermediate_video
@@ -299,7 +306,7 @@ class TopazVideoAINode:
                 ])
                 
                 logger.debug(f"Running FFmpeg upscale command: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path))
                 
                 if result.returncode != 0:
                     raise RuntimeError(f"FFmpeg upscale error: {result.stderr}")
@@ -336,7 +343,7 @@ class TopazVideoAINode:
                 ])
                 
                 logger.debug(f"Running FFmpeg interpolation command: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path))
                 
                 if result.returncode != 0:
                     raise RuntimeError(f"FFmpeg interpolation error: {result.stderr}")
@@ -345,7 +352,7 @@ class TopazVideoAINode:
                     shutil.copy2(current_input, current_output)
             
             logger.info("Converting final video back to image batch...")
-            output_frames = self._video_to_batch(current_output, use_gpu, topaz_ffmpeg_path)
+            output_frames = self._video_to_batch(current_output, use_gpu, topaz_ffmpeg_path, topaz_model_path)
             return (output_frames,)
             
         except Exception as e:
