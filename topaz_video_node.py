@@ -325,7 +325,6 @@ class TopazVideoAINode:
                 "-hide_banner",
                 "-nostdin",
                 "-strict", "2",
-                "-hwaccel", "auto",
                 "-i", os.path.join(frame_dir, "frame_%05d.png"),
                 "-c:v", "ffv1",
                 "-pix_fmt", "rgb24",
