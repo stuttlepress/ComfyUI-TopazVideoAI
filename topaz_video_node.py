@@ -14,7 +14,12 @@ from concurrent.futures import ThreadPoolExecutor
 import folder_paths
 
 logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger('TopazVideoAI')
+
+class _PrefixAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return f"[Topaz Video] {msg}", kwargs
+
+logger = _PrefixAdapter(logging.getLogger('TopazVideoAI'), {})
 
 
 def _topaz_model_dir():
@@ -198,7 +203,7 @@ class TopazVideoAINode:
     def __init__(self):
         self.output_dir = os.path.join(folder_paths.get_temp_directory(), "topaz")
         os.makedirs(self.output_dir, exist_ok=True)
-        logger.debug(f"Initialized temp directory at: {self.output_dir}")
+        self.debug = False
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -231,6 +236,8 @@ class TopazVideoAINode:
                     "tooltip": "Frame interpolation model. Models marked [not downloaded] must be downloaded in the Topaz Video AI app before use."}),
                 "topaz_ffmpeg_path": ("STRING", {"default": os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), r"Topaz Labs LLC\Topaz Video"),
                     "tooltip": "Path to the Topaz Video AI installation directory containing ffmpeg.exe."}),
+                "debug": ("BOOLEAN", {"default": False,
+                    "tooltip": "Enable verbose logging. When disabled only input and output summaries are printed."}),
             },
             "optional": {
                 "previous_upscale": ("UPSCALE_PARAMS",
@@ -263,7 +270,8 @@ class TopazVideoAINode:
         env = os.environ.copy()
         env["TVAI_MODEL_DIR"] = _topaz_model_dir()
         env["TVAI_MODEL_DATA_DIR"] = _topaz_data_dir()
-        logger.warning(f"TVAI_MODEL_DIR={env['TVAI_MODEL_DIR']} TVAI_MODEL_DATA_DIR={env['TVAI_MODEL_DATA_DIR']}")
+        if self.debug:
+            logger.debug(f"TVAI_MODEL_DIR={env['TVAI_MODEL_DIR']} TVAI_MODEL_DATA_DIR={env['TVAI_MODEL_DATA_DIR']}")
         return env
 
     def _log_video_info(self, video_path, topaz_ffmpeg_path):
@@ -284,9 +292,11 @@ class TopazVideoAINode:
                 parts = result.stdout.strip().split(",")
                 if len(parts) >= 5:
                     w, h, fps_frac, duration, frames = parts[0], parts[1], parts[2], parts[3], parts[4]
-                    logger.info(f"Input video: {w}x{h} {fps_frac}fps  frames={frames}  duration={duration}s")
+                    if self.debug:
+                        logger.info(f"Input video: {w}x{h} {fps_frac}fps  frames={frames}  duration={duration}s")
         except Exception as e:
-            logger.debug(f"ffprobe failed: {e}")
+            if self.debug:
+                logger.debug(f"ffprobe failed: {e}")
 
     def _batch_to_video(self, image_batch, output_path, topaz_ffmpeg_path, input_fps=24):
         frames = image_batch.cpu().numpy()
@@ -294,7 +304,8 @@ class TopazVideoAINode:
 
         frame_dir = os.path.join(self.output_dir, f"input_frames_{uuid.uuid4()}")
         os.makedirs(frame_dir, exist_ok=True)
-        logger.debug(f"Created frame directory: {frame_dir}")
+        if self.debug:
+            logger.debug(f"Created frame directory: {frame_dir}")
 
         try:
             batch_size = 32
@@ -311,7 +322,8 @@ class TopazVideoAINode:
                 for future in futures:
                     frame_paths.extend(future.result())
 
-            logger.debug(f"Saved {len(frame_paths)} frames")
+            if self.debug:
+                logger.debug(f"Saved {len(frame_paths)} frames")
 
             if not frame_paths:
                 raise ValueError("No frames were saved")
@@ -329,7 +341,8 @@ class TopazVideoAINode:
                 output_path
             ]
 
-            logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
+            if self.debug:
+                logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, cwd=topaz_ffmpeg_path, env=self._topaz_env())
 
             if result.returncode != 0:
@@ -338,7 +351,8 @@ class TopazVideoAINode:
             if not os.path.exists(output_path):
                 raise FileNotFoundError(f"Output video not created: {output_path}")
 
-            logger.debug(f"Video created successfully at: {output_path}")
+            if self.debug:
+                logger.debug(f"Video created successfully at: {output_path}")
 
         finally:
             shutil.rmtree(frame_dir, ignore_errors=True)
@@ -349,7 +363,8 @@ class TopazVideoAINode:
 
         frame_dir = os.path.join(self.output_dir, f"output_frames_{uuid.uuid4()}")
         os.makedirs(frame_dir, exist_ok=True)
-        logger.debug(f"Created output frame directory: {frame_dir}")
+        if self.debug:
+            logger.debug(f"Created output frame directory: {frame_dir}")
 
         try:
             ffmpeg_exe = self._get_topaz_ffmpeg_path(topaz_ffmpeg_path)
@@ -360,14 +375,16 @@ class TopazVideoAINode:
                 os.path.join(frame_dir, "frame_%05d.png")
             ]
 
-            logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
+            if self.debug:
+                logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, cwd=topaz_ffmpeg_path, env=self._topaz_env())
 
             if result.returncode != 0:
                 raise RuntimeError(f"FFmpeg error: {result.stderr}")
 
             frame_files = sorted([f for f in os.listdir(frame_dir) if f.endswith('.png')])
-            logger.debug(f"Found {len(frame_files)} output frames")
+            if self.debug:
+                logger.debug(f"Found {len(frame_files)} output frames")
 
             if not frame_files:
                 raise ValueError(f"No frames extracted from video: {video_path}")
@@ -378,7 +395,8 @@ class TopazVideoAINode:
                 frames.append(np.array(Image.open(frame_path)))
 
             frames_tensor = torch.from_numpy(np.stack(frames)).float() / 255.0
-            logger.debug(f"Created tensor with shape: {frames_tensor.shape}")
+            if self.debug:
+                logger.debug(f"Created tensor with shape: {frames_tensor.shape}")
 
             return frames_tensor
 
@@ -388,10 +406,19 @@ class TopazVideoAINode:
     def process_video(self, images, enable_upscale, upscale_factor, upscale_model, compression, blend,
                      enable_interpolation, input_fps, interpolation_multiplier,
                      interpolation_mode, target_fps,
-                     interpolation_model, topaz_ffmpeg_path,
+                     interpolation_model, topaz_ffmpeg_path, debug=False,
                      previous_upscale=None):
+        self.debug = debug
+
         upscale_id = _model_id(upscale_model)
         interpolation_id = _model_id(interpolation_model)
+
+        interp_rate = f"target_fps={target_fps}" if interpolation_mode == "target_fps" else f"multiplier={interpolation_multiplier}"
+        logger.info(
+            f"input: frames={images.shape[0]} size={images.shape[2]}x{images.shape[1]} "
+            f"fps={input_fps} upscale={enable_upscale}({upscale_id} x{upscale_factor}) "
+            f"interp={enable_interpolation}({interpolation_id} {interp_rate})"
+        )
 
         if upscale_id == "thm-2" and upscale_factor != 1.0:
             upscale_factor = 1.0
@@ -401,7 +428,8 @@ class TopazVideoAINode:
         input_video = os.path.join(self.output_dir, f"{operation_id}_input.mp4")
         output_video = os.path.join(self.output_dir, f"{operation_id}_output.mp4")
         try:
-            logger.info(f"Converting image batch to video with input fps {input_fps}...")
+            if self.debug:
+                logger.info(f"Converting image batch to video with input fps {input_fps}...")
             self._batch_to_video(images, input_video, topaz_ffmpeg_path, input_fps)
 
             filters = []
@@ -427,10 +455,12 @@ class TopazVideoAINode:
 
             if enable_interpolation:
                 if interpolation_mode == "target_fps":
-                    logger.info(f"Applying interpolation with direct target fps {target_fps}")
+                    if self.debug:
+                        logger.info(f"Applying interpolation with direct target fps {target_fps}")
                 else:
                     target_fps = input_fps * interpolation_multiplier
-                    logger.info(f"Applying interpolation with input fps {input_fps} and multiplier {interpolation_multiplier} (target fps: {target_fps})")
+                    if self.debug:
+                        logger.info(f"Applying interpolation with input fps {input_fps} and multiplier {interpolation_multiplier} (target fps: {target_fps})")
                 if target_fps <= 0:
                     raise ValueError("Target FPS must be greater than 0")
                 filters.append(f"tvai_fi=model={interpolation_id}:fps={target_fps}")
@@ -439,7 +469,8 @@ class TopazVideoAINode:
 
             if filters:
                 filter_chain = ','.join(filters)
-                logger.info(f"Applying filter chain: {filter_chain}")
+                if self.debug:
+                    logger.info(f"Applying filter chain: {filter_chain}")
                 ffmpeg_exe = self._get_topaz_ffmpeg_path(topaz_ffmpeg_path)
                 cmd = [
                     ffmpeg_exe, "-y",
@@ -453,15 +484,21 @@ class TopazVideoAINode:
                     "-pix_fmt", "rgb24",
                     output_video
                 ]
-                logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
+                if self.debug:
+                    logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
                 result = subprocess.run(cmd, capture_output=True, text=True, cwd=topaz_ffmpeg_path, env=self._topaz_env())
                 if result.returncode != 0:
                     raise RuntimeError(f"FFmpeg error: {result.stderr}")
             else:
                 shutil.copy2(input_video, output_video)
 
-            logger.info("Converting final video back to image batch...")
+            if self.debug:
+                logger.info("Converting final video back to image batch...")
             output_frames = self._video_to_batch(output_video, topaz_ffmpeg_path)
+
+            logger.info(
+                f"output: frames={output_frames.shape[0]} size={output_frames.shape[2]}x{output_frames.shape[1]}"
+            )
             return (output_frames,)
 
         except Exception as e:
@@ -481,6 +518,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "TopazVideoAI": "Topaz Video AI (Upscale & Frame Interpolation)",
+    "TopazVideoAI": "Topaz Video",
     "TopazUpscaleParams": "Topaz Upscale Parameters"
 }
