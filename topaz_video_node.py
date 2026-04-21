@@ -82,7 +82,7 @@ class TopazVideoAINode:
                 "compression": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 1.0, "step": 0.1}),
                 "blend": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.1}),
                 "enable_interpolation": ("BOOLEAN", {"default": False}),
-                "input_fps": ("INT", {"default": 24, "min": 1, "max": 240}),
+                "input_fps": ("FLOAT", {"default": 24.0, "min": 1.0, "max": 240.0, "step": 0.001}),
                 "interpolation_multiplier": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 8.0, "step": 0.5}),
                 "interpolation_model": (["apo-8", "apf-1", "chr-2", "chf-3"], {"default": "apo-8"}),
                 "use_gpu": ("BOOLEAN", {"default": True}),
@@ -391,7 +391,7 @@ class TopazVideoAINode:
                 current_output = output_video
             
             if enable_interpolation:
-                target_fps = int(input_fps * interpolation_multiplier)
+                target_fps = input_fps * interpolation_multiplier
                 logger.info(f"Applying interpolation with input fps {input_fps} and multiplier {interpolation_multiplier} (target fps: {target_fps})")
                 if target_fps <= 0:
                     raise ValueError("Target FPS must be greater than 0")
