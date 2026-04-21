@@ -343,62 +343,31 @@ class TopazVideoAINode:
 
         operation_id = str(uuid.uuid4())
         input_video = os.path.join(self.output_dir, f"{operation_id}_input.mp4")
-        intermediate_video = os.path.join(self.output_dir, f"{operation_id}_intermediate.mp4")
         output_video = os.path.join(self.output_dir, f"{operation_id}_output.mp4")
         try:
             logger.info(f"Converting image batch to video with input fps {input_fps}...")
             self._batch_to_video(images, input_video, topaz_ffmpeg_path, input_fps)
 
-            current_input = input_video
-            current_output = intermediate_video
+            filters = []
 
             if enable_upscale:
                 all_upscale_params = []
                 if previous_upscale:
                     all_upscale_params.extend(previous_upscale)
-
                 all_upscale_params.append({
                     "upscale_factor": upscale_factor,
                     "upscale_model": upscale_id,
                     "compression": compression,
                     "blend": blend
                 })
-
-                upscale_filters = []
                 for params in all_upscale_params:
-                    upscale_filters.append(
+                    filters.append(
                         f"tvai_up=model={params['upscale_model']}"
                         f":scale={int(params['upscale_factor'])}"
                         f":estimate=8"
                         f":compression={params['compression']}"
                         f":blend={params['blend']}"
                     )
-
-                filter_chain = ','.join(upscale_filters)
-                logger.info(f"Applying upscale filter chain: {filter_chain}")
-                ffmpeg_exe = self._get_topaz_ffmpeg_path(topaz_ffmpeg_path)
-                cmd = [
-                    ffmpeg_exe, "-y",
-                    "-hide_banner",
-                    "-nostdin",
-                    "-strict", "2",
-                    "-hwaccel", "auto",
-                    "-i", current_input,
-                    "-vf", filter_chain,
-                    "-c:v", "ffv1",
-                    "-pix_fmt", "rgb24",
-                    "-r", str(input_fps),
-                    current_output
-                ]
-
-                logger.debug(f"Running FFmpeg upscale command: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True, cwd=topaz_ffmpeg_path, env=self._topaz_env())
-
-                if result.returncode != 0:
-                    raise RuntimeError(f"FFmpeg upscale error: {result.stderr}")
-
-                current_input = current_output
-                current_output = output_video
 
             if enable_interpolation:
                 if interpolation_mode == "target_fps":
@@ -408,9 +377,11 @@ class TopazVideoAINode:
                     logger.info(f"Applying interpolation with input fps {input_fps} and multiplier {interpolation_multiplier} (target fps: {target_fps})")
                 if target_fps <= 0:
                     raise ValueError("Target FPS must be greater than 0")
+                filters.append(f"tvai_fi=model={interpolation_id}:fps={target_fps}")
 
-                interpolation_filter = f"tvai_fi=model={interpolation_id}:fps={target_fps}"
-
+            if filters:
+                filter_chain = ','.join(filters)
+                logger.info(f"Applying filter chain: {filter_chain}")
                 ffmpeg_exe = self._get_topaz_ffmpeg_path(topaz_ffmpeg_path)
                 cmd = [
                     ffmpeg_exe, "-y",
@@ -418,21 +389,18 @@ class TopazVideoAINode:
                     "-nostdin",
                     "-strict", "2",
                     "-hwaccel", "auto",
-                    "-i", current_input,
-                    "-vf", interpolation_filter,
+                    "-i", input_video,
+                    "-vf", filter_chain,
                     "-c:v", "ffv1",
                     "-pix_fmt", "rgb24",
-                    current_output
+                    output_video
                 ]
-
-                logger.debug(f"Running FFmpeg interpolation command: {' '.join(cmd)}")
+                logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
                 result = subprocess.run(cmd, capture_output=True, text=True, cwd=topaz_ffmpeg_path, env=self._topaz_env())
-
                 if result.returncode != 0:
-                    raise RuntimeError(f"FFmpeg interpolation error: {result.stderr}")
+                    raise RuntimeError(f"FFmpeg error: {result.stderr}")
             else:
-                if current_input != output_video:
-                    shutil.copy2(current_input, current_output)
+                shutil.copy2(input_video, output_video)
 
             logger.info("Converting final video back to image batch...")
             output_frames = self._video_to_batch(current_output, topaz_ffmpeg_path)
@@ -442,7 +410,7 @@ class TopazVideoAINode:
             logger.error(f"An error occurred: {e}")
             raise
         finally:
-            for f in [input_video, intermediate_video, output_video]:
+            for f in [input_video, output_video]:
                 try:
                     os.remove(f)
                 except OSError:
