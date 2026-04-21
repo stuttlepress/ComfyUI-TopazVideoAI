@@ -135,21 +135,7 @@ def _discover_models():
         missing = sorted(f"{gui_name} ({name}) [not downloaded]" for name, gui_name, ok in entries if not ok)
         return ready + missing
 
-    upscale_list = build_list(upscale)
-    interpolation_list = build_list(interpolation)
-
-    if not upscale_list:
-        upscale_list = ["Artemis - Aliasing or Moire (aaa-9)", "Artemis - High Quality (ahq-12)",
-                        "Artemis - Low Quality (alq-13)", "Artemis - Strong Halo (alqs-2)",
-                        "Artemis - Medium Quality (amq-13)", "Artemis - Medium Quality Halo (amqs-2)",
-                        "Gaia - High Quality (ghq-5)", "Iris - Medium Quality (iris-2)",
-                        "Iris - Low Quality (iris-3)", "Nyx (nyx-3)", "Proteus (prob-4)",
-                        "Theia Fine Tune Fidelity (thf-4)", "Theia Fine Tune Detail (thd-3)",
-                        "Themis (thm-2)", "Rhea - Medium Quality (rhea-1)", "Rhea XL - Fine Details (rxl-1)"]
-    if not interpolation_list:
-        interpolation_list = ["Apollo (apo-8)", "Apollo Fast (apf-1)", "Chronos (chr-2)", "Chronos Fast (chf-3)"]
-
-    return upscale_list, interpolation_list
+    return build_list(upscale), build_list(interpolation)
 
 
 def _model_id(label):
@@ -188,9 +174,7 @@ class TopazUpscaleParamsNode:
     FUNCTION = "get_params"
     CATEGORY = "video"
 
-    def get_params(self, upscale_factor=2.0, upscale_model=None, compression=1.0, blend=0.0, previous_upscale=None):
-        if upscale_model is None:
-            upscale_model = _discover_models()[0][0]
+    def get_params(self, upscale_factor=2.0, upscale_model="", compression=1.0, blend=0.0, previous_upscale=None):
         model_id = _model_id(upscale_model)
 
         if model_id == "thm-2" and upscale_factor != 1.0:
