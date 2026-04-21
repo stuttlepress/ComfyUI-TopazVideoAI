@@ -214,22 +214,10 @@ class TopazVideoAINode:
                 "-i", os.path.join(frame_dir, "frame_%05d.png"),
             ]
             
-            if use_gpu:
-                cmd.extend([
-                    "-c:v", "hevc_nvenc",
-                    "-profile", "main",
-                    "-preset", "medium",
-                    "-global_quality", "19",
-                    "-pix_fmt", "yuv420p",
-                    "-movflags", "frag_keyframe+empty_moov",
-                ])
-            else:
-                cmd.extend([
-                    "-c:v", "mpeg4",
-                    "-q:v", "2",
-                ])
-                
             cmd.extend([
+                "-c:v", "libx264rgb",
+                "-crf", "0",
+                "-preset", "ultrafast",
                 "-r", str(input_fps),
                 output_path
             ])
@@ -360,22 +348,10 @@ class TopazVideoAINode:
                     "-vf", filter_chain,
                 ]
                 
-                if use_gpu:
-                    cmd.extend([
-                        "-c:v", "hevc_nvenc",
-                        "-profile", "main",
-                        "-preset", "medium",
-                        "-global_quality", "19",
-                        "-pix_fmt", "yuv420p",
-                        "-movflags", "frag_keyframe+empty_moov",
-                    ])
-                else:
-                    cmd.extend([
-                        "-c:v", "mpeg4",
-                        "-q:v", "2",
-                    ])
-                    
                 cmd.extend([
+                    "-c:v", "libx264rgb",
+                    "-crf", "0",
+                    "-preset", "ultrafast",
                     "-r", str(input_fps),
                     current_output
                 ])
@@ -411,22 +387,10 @@ class TopazVideoAINode:
                     "-vf", interpolation_filter,
                 ]
                 
-                if use_gpu:
-                    cmd.extend([
-                        "-c:v", "hevc_nvenc",
-                        "-profile", "main",
-                        "-preset", "medium",
-                        "-global_quality", "19",
-                        "-pix_fmt", "yuv420p",
-                        "-movflags", "frag_keyframe+empty_moov",
-                    ])
-                else:
-                    cmd.extend([
-                        "-c:v", "mpeg4",
-                        "-q:v", "2",
-                    ])
-                    
                 cmd.extend([
+                    "-c:v", "libx264rgb",
+                    "-crf", "0",
+                    "-preset", "ultrafast",
                     current_output
                 ])
                 
