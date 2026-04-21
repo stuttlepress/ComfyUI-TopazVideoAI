@@ -316,19 +316,16 @@ class TopazVideoAINode:
             if not frame_paths:
                 raise ValueError("No frames were saved")
 
-            actual_on_disk = len([f for f in os.listdir(frame_dir) if f.endswith('.png')])
-            logger.info(f"Frames in batch: {len(frames)}  frame_paths collected: {len(frame_paths)}  PNGs on disk: {actual_on_disk}")
-
             ffmpeg_exe = self._get_topaz_ffmpeg_path(topaz_ffmpeg_path)
             cmd = [
                 ffmpeg_exe, "-y",
                 "-hide_banner",
                 "-nostdin",
                 "-strict", "2",
+                "-r", str(input_fps),
                 "-i", os.path.join(frame_dir, "frame_%05d.png"),
                 "-c:v", "ffv1",
                 "-pix_fmt", "rgb24",
-                "-r", str(input_fps),
                 output_path
             ]
 
