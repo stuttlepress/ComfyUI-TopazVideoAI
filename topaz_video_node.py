@@ -1,4 +1,5 @@
 import os
+import winreg
 import numpy as np
 import torch
 import subprocess
@@ -115,8 +116,16 @@ class TopazVideoAINode:
 
     def _topaz_env(self):
         env = os.environ.copy()
-        env.pop("TVAI_MODEL_DIR", None)
-        env.pop("TVAI_MODEL_DATA_DIR", None)
+        env["TVAI_MODEL_DIR"] = r"C:\ProgramData\Topaz Labs LLC\Topaz Video\models"
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                 r"Software\Topaz Labs LLC\Topaz Video")
+            data_dir, _ = winreg.QueryValueEx(key, "veaiDataFolder")
+            winreg.CloseKey(key)
+            env["TVAI_MODEL_DATA_DIR"] = data_dir
+        except Exception:
+            env["TVAI_MODEL_DATA_DIR"] = env["TVAI_MODEL_DIR"]
+        logger.warning(f"TVAI_MODEL_DIR={env['TVAI_MODEL_DIR']} TVAI_MODEL_DATA_DIR={env['TVAI_MODEL_DATA_DIR']}")
         return env
 
     def _batch_to_video(self, image_batch, output_path, use_gpu, topaz_ffmpeg_path, input_fps=24):
