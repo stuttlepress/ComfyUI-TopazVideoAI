@@ -118,7 +118,7 @@ class TopazVideoAINode:
         env = os.environ.copy()
         env["TVAI_MODEL_DIR"] = topaz_model_path
         env["TVAI_MODEL_DATA_DIR"] = topaz_model_path
-        logger.debug(f"TVAI_MODEL_DIR={topaz_model_path}")
+        logger.warning(f"TVAI_MODEL_DIR={topaz_model_path}")
         return env
 
     def _batch_to_video(self, image_batch, output_path, use_gpu, topaz_ffmpeg_path, topaz_model_path, input_fps=24):
