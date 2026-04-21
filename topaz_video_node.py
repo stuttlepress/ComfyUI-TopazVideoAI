@@ -145,13 +145,18 @@ class TopazUpscaleParamsNode:
         upscale_models, _ = _discover_models()
         return {
             "required": {
-                "upscale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 4.0, "step": 0.5}),
-                "upscale_model": (upscale_models, {"default": upscale_models[0]}),
-                "compression": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 1.0, "step": 0.1}),
-                "blend": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.1}),
+                "upscale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 4.0, "step": 0.5,
+                    "tooltip": "Resolution multiplier. 2.0 doubles width and height. Themis (thm-2) ignores this and always runs at 1x."}),
+                "upscale_model": (upscale_models, {"default": upscale_models[0],
+                    "tooltip": "Upscale model. Models marked [not downloaded] must be downloaded in the Topaz Video AI app before use."}),
+                "compression": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 1.0, "step": 0.1,
+                    "tooltip": "Compression artifact removal strength. 1.0 is maximum, -1.0 adds compression-like softening."}),
+                "blend": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.1,
+                    "tooltip": "Blends processed output with the original. 0.0 is fully processed, 1.0 is fully original."}),
             },
             "optional": {
-                "previous_upscale": ("UPSCALE_PARAMS",),
+                "previous_upscale": ("UPSCALE_PARAMS",
+                    {"tooltip": "Chain multiple upscale passes. Connect a Topaz Upscale Parameters node here to apply its settings before this one."}),
             }
         }
 
@@ -192,22 +197,36 @@ class TopazVideoAINode:
         upscale_models, interpolation_models = _discover_models()
         return {
             "required": {
-                "images": ("IMAGE",),
-                "enable_upscale": ("BOOLEAN", {"default": False}),
-                "upscale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 4.0, "step": 0.5}),
-                "upscale_model": (upscale_models, {"default": upscale_models[0]}),
-                "compression": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 1.0, "step": 0.1}),
-                "blend": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.1}),
-                "enable_interpolation": ("BOOLEAN", {"default": False}),
-                "input_fps": ("FLOAT", {"default": 24.0, "min": 1.0, "max": 240.0, "step": 0.001}),
-                "interpolation_multiplier": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 8.0, "step": 0.5}),
-                "interpolation_mode": (["target_fps", "multiplier"], {"default": "target_fps"}),
-                "target_fps": ("FLOAT", {"default": 48.0, "min": 1.0, "max": 960.0, "step": 0.001}),
-                "interpolation_model": (interpolation_models, {"default": interpolation_models[0]}),
-                "topaz_ffmpeg_path": ("STRING", {"default": os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), r"Topaz Labs LLC\Topaz Video")}),
+                "images": ("IMAGE",
+                    {"tooltip": "Input image batch to process."}),
+                "enable_upscale": ("BOOLEAN", {"default": False,
+                    "tooltip": "Enable AI upscaling. When combined with interpolation, both run in a single pass."}),
+                "upscale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 4.0, "step": 0.5,
+                    "tooltip": "Resolution multiplier. 2.0 doubles width and height. Themis (thm-2) ignores this and always runs at 1x."}),
+                "upscale_model": (upscale_models, {"default": upscale_models[0],
+                    "tooltip": "Upscale model. Models marked [not downloaded] must be downloaded in the Topaz Video AI app before use."}),
+                "compression": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 1.0, "step": 0.1,
+                    "tooltip": "Compression artifact removal strength. 1.0 is maximum, -1.0 adds compression-like softening."}),
+                "blend": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.1,
+                    "tooltip": "Blends processed output with the original. 0.0 is fully processed, 1.0 is fully original."}),
+                "enable_interpolation": ("BOOLEAN", {"default": False,
+                    "tooltip": "Enable AI frame interpolation to increase frame rate. When combined with upscaling, both run in a single pass."}),
+                "input_fps": ("FLOAT", {"default": 24.0, "min": 1.0, "max": 240.0, "step": 0.001,
+                    "tooltip": "Frame rate of the input image batch. Must match the actual source frame rate for interpolation to work correctly."}),
+                "interpolation_multiplier": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 8.0, "step": 0.5,
+                    "tooltip": "Target frame rate multiplier relative to input FPS. Only used when interpolation mode is set to 'multiplier'."}),
+                "interpolation_mode": (["target_fps", "multiplier"], {"default": "target_fps",
+                    "tooltip": "target_fps: set output frame rate directly. multiplier: multiply input FPS by the interpolation multiplier."}),
+                "target_fps": ("FLOAT", {"default": 48.0, "min": 1.0, "max": 960.0, "step": 0.001,
+                    "tooltip": "Output frame rate in frames per second. Only used when interpolation mode is set to 'target_fps'."}),
+                "interpolation_model": (interpolation_models, {"default": interpolation_models[0],
+                    "tooltip": "Frame interpolation model. Models marked [not downloaded] must be downloaded in the Topaz Video AI app before use."}),
+                "topaz_ffmpeg_path": ("STRING", {"default": os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), r"Topaz Labs LLC\Topaz Video"),
+                    "tooltip": "Path to the Topaz Video AI installation directory containing ffmpeg.exe."}),
             },
             "optional": {
-                "previous_upscale": ("UPSCALE_PARAMS",),
+                "previous_upscale": ("UPSCALE_PARAMS",
+                    {"tooltip": "Chain multiple upscale passes from a Topaz Upscale Parameters node. Those settings run before the upscale settings on this node."}),
             }
         }
 
