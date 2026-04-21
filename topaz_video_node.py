@@ -266,6 +266,28 @@ class TopazVideoAINode:
         logger.warning(f"TVAI_MODEL_DIR={env['TVAI_MODEL_DIR']} TVAI_MODEL_DATA_DIR={env['TVAI_MODEL_DATA_DIR']}")
         return env
 
+    def _log_video_info(self, video_path, topaz_ffmpeg_path):
+        ffprobe_exe = os.path.join(topaz_ffmpeg_path, "ffprobe.exe")
+        if not os.path.exists(ffprobe_exe):
+            return
+        try:
+            cmd = [
+                ffprobe_exe, "-v", "error",
+                "-select_streams", "v:0",
+                "-count_packets",
+                "-show_entries", "stream=nb_read_packets,r_frame_rate,width,height,duration",
+                "-of", "csv=p=0",
+                video_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=topaz_ffmpeg_path, env=self._topaz_env())
+            if result.returncode == 0 and result.stdout.strip():
+                parts = result.stdout.strip().split(",")
+                if len(parts) >= 5:
+                    w, h, fps_frac, duration, frames = parts[0], parts[1], parts[2], parts[3], parts[4]
+                    logger.info(f"Input video: {w}x{h} {fps_frac}fps  frames={frames}  duration={duration}s")
+        except Exception as e:
+            logger.debug(f"ffprobe failed: {e}")
+
     def _batch_to_video(self, image_batch, output_path, topaz_ffmpeg_path, input_fps=24):
         frames = image_batch.cpu().numpy()
         frames = (frames * 255).astype(np.uint8)
@@ -413,6 +435,8 @@ class TopazVideoAINode:
                 if target_fps <= 0:
                     raise ValueError("Target FPS must be greater than 0")
                 filters.append(f"tvai_fi=model={interpolation_id}:fps={target_fps}")
+
+            self._log_video_info(input_video, topaz_ffmpeg_path)
 
             if filters:
                 filter_chain = ','.join(filters)
