@@ -128,19 +128,17 @@ def _model_id(name):
     return name.split(' [')[0]
 
 
-_UPSCALE_MODELS, _INTERPOLATION_MODELS = _discover_models()
-
-
 class TopazUpscaleParamsNode:
     def __init__(self):
         pass
 
     @classmethod
     def INPUT_TYPES(cls):
+        upscale_models, _ = _discover_models()
         return {
             "required": {
                 "upscale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 4.0, "step": 0.5}),
-                "upscale_model": (_UPSCALE_MODELS, {"default": _UPSCALE_MODELS[0]}),
+                "upscale_model": (upscale_models, {"default": upscale_models[0]}),
                 "compression": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 1.0, "step": 0.1}),
                 "blend": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.1}),
             },
@@ -155,7 +153,7 @@ class TopazUpscaleParamsNode:
 
     def get_params(self, upscale_factor=2.0, upscale_model=None, compression=1.0, blend=0.0, previous_upscale=None):
         if upscale_model is None:
-            upscale_model = _UPSCALE_MODELS[0]
+            upscale_model = _discover_models()[0][0]
         model_id = _model_id(upscale_model)
 
         if model_id == "thm-2" and upscale_factor != 1.0:
@@ -183,12 +181,13 @@ class TopazVideoAINode:
 
     @classmethod
     def INPUT_TYPES(cls):
+        upscale_models, interpolation_models = _discover_models()
         return {
             "required": {
                 "images": ("IMAGE",),
                 "enable_upscale": ("BOOLEAN", {"default": False}),
                 "upscale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 4.0, "step": 0.5}),
-                "upscale_model": (_UPSCALE_MODELS, {"default": _UPSCALE_MODELS[0]}),
+                "upscale_model": (upscale_models, {"default": upscale_models[0]}),
                 "compression": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 1.0, "step": 0.1}),
                 "blend": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.1}),
                 "enable_interpolation": ("BOOLEAN", {"default": False}),
@@ -196,7 +195,7 @@ class TopazVideoAINode:
                 "interpolation_multiplier": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 8.0, "step": 0.5}),
                 "interpolation_mode": (["target_fps", "multiplier"], {"default": "target_fps"}),
                 "target_fps": ("FLOAT", {"default": 48.0, "min": 1.0, "max": 960.0, "step": 0.001}),
-                "interpolation_model": (_INTERPOLATION_MODELS, {"default": _INTERPOLATION_MODELS[0]}),
+                "interpolation_model": (interpolation_models, {"default": interpolation_models[0]}),
                 "topaz_ffmpeg_path": ("STRING", {"default": os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), r"Topaz Labs LLC\Topaz Video")}),
             },
             "optional": {
