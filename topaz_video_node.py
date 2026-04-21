@@ -48,6 +48,17 @@ def _downloaded_prefixes(data_dir):
     return prefixes
 
 
+_EXCLUDED_MODELS = {
+    "ifi-1",  # deprecated, not in Topaz supported list
+}
+
+_SUPPLEMENTAL_UPSCALE = [
+    ("nxhf-1", "Nyx High Fidelity", "nxhf", "1"),
+]
+
+_SUPPLEMENTAL_INTERPOLATION = []
+
+
 def _discover_models():
     """
     Returns (upscale_models, interpolation_models).
@@ -80,6 +91,9 @@ def _discover_models():
                 continue
 
             name = os.path.basename(json_path)[:-5]
+            if name in _EXCLUDED_MODELS:
+                continue
+
             short_name = d.get("shortName", "")
             version = d.get("version", "")
             is_downloaded = f"{short_name}-v{version}" in downloaded
@@ -92,6 +106,16 @@ def _discover_models():
                 interpolation.append(entry)
     except Exception:
         pass
+
+    for name, gui_name, short_name, version in _SUPPLEMENTAL_UPSCALE:
+        if name not in _EXCLUDED_MODELS:
+            is_downloaded = f"{short_name}-v{version}" in downloaded
+            upscale.append((name, gui_name, is_downloaded))
+
+    for name, gui_name, short_name, version in _SUPPLEMENTAL_INTERPOLATION:
+        if name not in _EXCLUDED_MODELS:
+            is_downloaded = f"{short_name}-v{version}" in downloaded
+            interpolation.append((name, gui_name, is_downloaded))
 
     def latest_per_family(entries):
         families = {}
