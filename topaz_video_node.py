@@ -118,6 +118,7 @@ class TopazVideoAINode:
         env = os.environ.copy()
         env["TVAI_MODEL_DIR"] = topaz_model_path
         env["TVAI_MODEL_DATA_DIR"] = topaz_model_path
+        logger.debug(f"TVAI_MODEL_DIR={topaz_model_path}")
         return env
 
     def _batch_to_video(self, image_batch, output_path, use_gpu, topaz_ffmpeg_path, topaz_model_path, input_fps=24):
@@ -173,7 +174,7 @@ class TopazVideoAINode:
             ])
             
             logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path))
+            result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path), cwd=topaz_ffmpeg_path)
 
             if result.returncode != 0:
                 raise RuntimeError(f"FFmpeg error: {result.stderr}")
@@ -204,7 +205,7 @@ class TopazVideoAINode:
             ]
             
             logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path))
+            result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path), cwd=topaz_ffmpeg_path)
 
             if result.returncode != 0:
                 raise RuntimeError(f"FFmpeg error: {result.stderr}")
@@ -306,7 +307,7 @@ class TopazVideoAINode:
                 ])
                 
                 logger.debug(f"Running FFmpeg upscale command: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path))
+                result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path), cwd=topaz_ffmpeg_path)
                 
                 if result.returncode != 0:
                     raise RuntimeError(f"FFmpeg upscale error: {result.stderr}")
@@ -343,7 +344,7 @@ class TopazVideoAINode:
                 ])
                 
                 logger.debug(f"Running FFmpeg interpolation command: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path))
+                result = subprocess.run(cmd, capture_output=True, text=True, env=self._topaz_env(topaz_model_path), cwd=topaz_ffmpeg_path)
                 
                 if result.returncode != 0:
                     raise RuntimeError(f"FFmpeg interpolation error: {result.stderr}")
