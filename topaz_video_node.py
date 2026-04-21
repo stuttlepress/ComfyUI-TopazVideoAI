@@ -85,7 +85,7 @@ class TopazVideoAINode:
                 "target_fps": ("FLOAT", {"default": 48.0, "min": 1.0, "max": 960.0, "step": 0.001}),
                 "interpolation_model": (["apo-8", "apf-1", "chr-2", "chf-3"], {"default": "apo-8"}),
                 "use_gpu": ("BOOLEAN", {"default": True}),
-                "topaz_ffmpeg_path": ("STRING", {"default": r"C:\Program Files\Topaz Labs LLC\Topaz Video"}),
+                "topaz_ffmpeg_path": ("STRING", {"default": os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), r"Topaz Labs LLC\Topaz Video")}),
             },
             "optional": {
                 "previous_upscale": ("UPSCALE_PARAMS",),
@@ -116,7 +116,10 @@ class TopazVideoAINode:
 
     def _topaz_env(self):
         env = os.environ.copy()
-        env["TVAI_MODEL_DIR"] = r"C:\ProgramData\Topaz Labs LLC\Topaz Video\models"
+        env["TVAI_MODEL_DIR"] = os.path.join(
+            os.environ.get("PROGRAMDATA", r"C:\ProgramData"),
+            r"Topaz Labs LLC\Topaz Video\models"
+        )
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                                  r"Software\Topaz Labs LLC\Topaz Video")
