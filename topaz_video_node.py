@@ -83,8 +83,9 @@ def _discover_models():
             short_name = d.get("shortName", "")
             version = d.get("version", "")
             is_downloaded = f"{short_name}-v{version}" in downloaded
+            gui_name = d.get("gui", {}).get("name") or d.get("displayName") or name
 
-            entry = (name, is_downloaded)
+            entry = (name, gui_name, is_downloaded)
             if model_type == 1:
                 upscale.append(entry)
             else:
@@ -94,38 +95,45 @@ def _discover_models():
 
     def latest_per_family(entries):
         families = {}
-        for name, is_downloaded in entries:
+        for name, gui_name, is_downloaded in entries:
             m = re.match(r'^(.+)-(\d+)$', name)
             if m:
                 family, version = m.group(1), int(m.group(2))
             else:
                 family, version = name, 0
             if family not in families or version > families[family][0]:
-                families[family] = (version, name, is_downloaded)
-        return [(name, ok) for _, name, ok in families.values()]
+                families[family] = (version, name, gui_name, is_downloaded)
+        return [(name, gui_name, ok) for _, name, gui_name, ok in families.values()]
 
     def build_list(entries):
         entries = latest_per_family(entries)
-        ready = sorted(name for name, ok in entries if ok)
-        missing = sorted(f"{name} [not downloaded]" for name, ok in entries if not ok)
+        ready = sorted(f"{gui_name} ({name})" for name, gui_name, ok in entries if ok)
+        missing = sorted(f"{gui_name} ({name}) [not downloaded]" for name, gui_name, ok in entries if not ok)
         return ready + missing
 
     upscale_list = build_list(upscale)
     interpolation_list = build_list(interpolation)
 
     if not upscale_list:
-        upscale_list = ["aaa-9", "ahq-12", "alq-13", "alqs-2", "amq-13", "amqs-2",
-                        "ghq-5", "iris-2", "iris-3", "nyx-3", "prob-4", "thf-4",
-                        "thd-3", "thm-2", "rhea-1", "rxl-1"]
+        upscale_list = ["Artemis - Aliasing or Moire (aaa-9)", "Artemis - High Quality (ahq-12)",
+                        "Artemis - Low Quality (alq-13)", "Artemis - Strong Halo (alqs-2)",
+                        "Artemis - Medium Quality (amq-13)", "Artemis - Medium Quality Halo (amqs-2)",
+                        "Gaia - High Quality (ghq-5)", "Iris - Medium Quality (iris-2)",
+                        "Iris - Low Quality (iris-3)", "Nyx (nyx-3)", "Proteus (prob-4)",
+                        "Theia Fine Tune Fidelity (thf-4)", "Theia Fine Tune Detail (thd-3)",
+                        "Themis (thm-2)", "Rhea - Medium Quality (rhea-1)", "Rhea XL - Fine Details (rxl-1)"]
     if not interpolation_list:
-        interpolation_list = ["apo-8", "apf-1", "chr-2", "chf-3"]
+        interpolation_list = ["Apollo (apo-8)", "Apollo Fast (apf-1)", "Chronos (chr-2)", "Chronos Fast (chf-3)"]
 
     return upscale_list, interpolation_list
 
 
-def _model_id(name):
-    """Strip the '[not downloaded]' suffix to get the bare model ID for ffmpeg."""
-    return name.split(' [')[0]
+def _model_id(label):
+    """Extract the bare model ID from a dropdown label like 'Proteus (prob-4) [not downloaded]'."""
+    m = re.search(r'\(([^)]+)\)', label)
+    if m:
+        return m.group(1)
+    return label.split(' [')[0]
 
 
 class TopazUpscaleParamsNode:
