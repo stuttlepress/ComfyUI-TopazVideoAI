@@ -1,4 +1,6 @@
 import os
+import json
+import glob
 import winreg
 import numpy as np
 import torch
@@ -13,17 +15,118 @@ import folder_paths
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger('TopazVideoAI')
 
+
+def _topaz_model_dir():
+    return os.path.join(
+        os.environ.get("PROGRAMDATA", r"C:\ProgramData"),
+        r"Topaz Labs LLC\Topaz Video\models"
+    )
+
+
+def _topaz_data_dir():
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Topaz Labs LLC\Topaz Video")
+        data_dir, _ = winreg.QueryValueEx(key, "veaiDataFolder")
+        winreg.CloseKey(key)
+        return data_dir
+    except Exception:
+        return _topaz_model_dir()
+
+
+def _downloaded_prefixes(data_dir):
+    """Return set of 'shortname-vversion' prefixes that have at least one .tz3 file on disk."""
+    prefixes = set()
+    try:
+        for f in os.listdir(data_dir):
+            if f.endswith('.tz3'):
+                parts = f.split('-')
+                if len(parts) >= 2:
+                    prefixes.add(f"{parts[0]}-{parts[1]}")
+    except Exception:
+        pass
+    return prefixes
+
+
+def _discover_models():
+    """
+    Returns (upscale_models, interpolation_models).
+    Each list contains model IDs for downloaded models first, then
+    'model-id [not downloaded]' for the rest. Both groups are sorted alphabetically.
+    Falls back to hardcoded lists if the model directory cannot be read.
+    """
+    model_dir = _topaz_model_dir()
+    data_dir = _topaz_data_dir()
+    downloaded = _downloaded_prefixes(data_dir)
+
+    upscale = []
+    interpolation = []
+
+    try:
+        for json_path in sorted(glob.glob(os.path.join(model_dir, "*.json"))):
+            try:
+                with open(json_path) as f:
+                    d = json.load(f)
+            except Exception:
+                continue
+
+            if not isinstance(d, dict):
+                continue
+
+            model_type = d.get("modelType")
+            if model_type not in (1, 2):
+                continue
+            if not d.get("enabled", 1):
+                continue
+
+            name = os.path.basename(json_path)[:-5]
+            short_name = d.get("shortName", "")
+            version = d.get("version", "")
+            is_downloaded = f"{short_name}-v{version}" in downloaded
+
+            entry = (name, is_downloaded)
+            if model_type == 1:
+                upscale.append(entry)
+            else:
+                interpolation.append(entry)
+    except Exception:
+        pass
+
+    def build_list(entries):
+        ready = sorted(name for name, ok in entries if ok)
+        missing = sorted(f"{name} [not downloaded]" for name, ok in entries if not ok)
+        return ready + missing
+
+    upscale_list = build_list(upscale)
+    interpolation_list = build_list(interpolation)
+
+    if not upscale_list:
+        upscale_list = ["aaa-9", "ahq-12", "alq-13", "alqs-2", "amq-13", "amqs-2",
+                        "ghq-5", "iris-2", "iris-3", "nyx-3", "prob-4", "thf-4",
+                        "thd-3", "thm-2", "rhea-1", "rxl-1"]
+    if not interpolation_list:
+        interpolation_list = ["apo-8", "apf-1", "chr-2", "chf-3"]
+
+    return upscale_list, interpolation_list
+
+
+def _model_id(name):
+    """Strip the '[not downloaded]' suffix to get the bare model ID for ffmpeg."""
+    return name.split(' [')[0]
+
+
+_UPSCALE_MODELS, _INTERPOLATION_MODELS = _discover_models()
+
+
 class TopazUpscaleParamsNode:
     def __init__(self):
         pass
 
     @classmethod
     def INPUT_TYPES(cls):
-        upscale_models = ["aaa-9", "ahq-12", "alq-13", "alqs-2", "amq-13", "amqs-2", "ghq-5", "iris-2", "iris-3", "nyx-3", "prob-4", "thf-4", "thd-3", "thm-2", "rhea-1", "rxl-1"]
         return {
             "required": {
                 "upscale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 4.0, "step": 0.5}),
-                "upscale_model": (upscale_models, {"default": "iris-3"}),
+                "upscale_model": (_UPSCALE_MODELS, {"default": _UPSCALE_MODELS[0]}),
                 "compression": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 1.0, "step": 0.1}),
                 "blend": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.1}),
             },
@@ -36,14 +139,18 @@ class TopazUpscaleParamsNode:
     FUNCTION = "get_params"
     CATEGORY = "video"
 
-    def get_params(self, upscale_factor=2.0, upscale_model="prap-2", compression=1.0, blend=0.0, previous_upscale=None):
-        if upscale_model == "thm-2" and upscale_factor != 1.0:
+    def get_params(self, upscale_factor=2.0, upscale_model=None, compression=1.0, blend=0.0, previous_upscale=None):
+        if upscale_model is None:
+            upscale_model = _UPSCALE_MODELS[0]
+        model_id = _model_id(upscale_model)
+
+        if model_id == "thm-2" and upscale_factor != 1.0:
             upscale_factor = 1.0
             logger.warning("thm-2 forces upscale_factor=1.0")
 
         current_params = {
             "upscale_factor": upscale_factor,
-            "upscale_model": upscale_model,
+            "upscale_model": model_id,
             "compression": compression,
             "blend": blend
         }
@@ -53,6 +160,7 @@ class TopazUpscaleParamsNode:
         else:
             return (previous_upscale + [current_params],)
 
+
 class TopazVideoAINode:
     def __init__(self):
         self.output_dir = os.path.join(folder_paths.get_temp_directory(), "topaz")
@@ -61,13 +169,12 @@ class TopazVideoAINode:
 
     @classmethod
     def INPUT_TYPES(cls):
-        upscale_models = ["aaa-9", "ahq-12", "alq-13", "alqs-2", "amq-13", "amqs-2", "ghq-5", "iris-2", "iris-3", "nyx-3", "prob-4", "thf-4", "thd-3", "thm-2", "rhea-1", "rxl-1"]
         return {
             "required": {
                 "images": ("IMAGE",),
                 "enable_upscale": ("BOOLEAN", {"default": False}),
                 "upscale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 4.0, "step": 0.5}),
-                "upscale_model": (upscale_models, {"default": "thf-4"}),
+                "upscale_model": (_UPSCALE_MODELS, {"default": _UPSCALE_MODELS[0]}),
                 "compression": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 1.0, "step": 0.1}),
                 "blend": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.1}),
                 "enable_interpolation": ("BOOLEAN", {"default": False}),
@@ -75,7 +182,7 @@ class TopazVideoAINode:
                 "interpolation_multiplier": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 8.0, "step": 0.5}),
                 "interpolation_mode": (["target_fps", "multiplier"], {"default": "target_fps"}),
                 "target_fps": ("FLOAT", {"default": 48.0, "min": 1.0, "max": 960.0, "step": 0.001}),
-                "interpolation_model": (["apo-8", "apf-1", "chr-2", "chf-3"], {"default": "apo-8"}),
+                "interpolation_model": (_INTERPOLATION_MODELS, {"default": _INTERPOLATION_MODELS[0]}),
                 "topaz_ffmpeg_path": ("STRING", {"default": os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), r"Topaz Labs LLC\Topaz Video")}),
             },
             "optional": {
@@ -106,18 +213,8 @@ class TopazVideoAINode:
 
     def _topaz_env(self):
         env = os.environ.copy()
-        env["TVAI_MODEL_DIR"] = os.path.join(
-            os.environ.get("PROGRAMDATA", r"C:\ProgramData"),
-            r"Topaz Labs LLC\Topaz Video\models"
-        )
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                                 r"Software\Topaz Labs LLC\Topaz Video")
-            data_dir, _ = winreg.QueryValueEx(key, "veaiDataFolder")
-            winreg.CloseKey(key)
-            env["TVAI_MODEL_DATA_DIR"] = data_dir
-        except Exception:
-            env["TVAI_MODEL_DATA_DIR"] = env["TVAI_MODEL_DIR"]
+        env["TVAI_MODEL_DIR"] = _topaz_model_dir()
+        env["TVAI_MODEL_DATA_DIR"] = _topaz_data_dir()
         logger.warning(f"TVAI_MODEL_DIR={env['TVAI_MODEL_DIR']} TVAI_MODEL_DATA_DIR={env['TVAI_MODEL_DATA_DIR']}")
         return env
 
@@ -209,8 +306,7 @@ class TopazVideoAINode:
             frames = []
             for frame_file in frame_files:
                 frame_path = os.path.join(frame_dir, frame_file)
-                img = Image.open(frame_path)
-                frames.append(np.array(img))
+                frames.append(np.array(Image.open(frame_path)))
 
             frames_tensor = torch.from_numpy(np.stack(frames)).float() / 255.0
             logger.debug(f"Created tensor with shape: {frames_tensor.shape}")
@@ -225,7 +321,10 @@ class TopazVideoAINode:
                      interpolation_mode, target_fps,
                      interpolation_model, topaz_ffmpeg_path,
                      previous_upscale=None):
-        if upscale_model == "thm-2" and upscale_factor != 1.0:
+        upscale_id = _model_id(upscale_model)
+        interpolation_id = _model_id(interpolation_model)
+
+        if upscale_id == "thm-2" and upscale_factor != 1.0:
             upscale_factor = 1.0
             logger.warning("thm-2 forces upscale_factor=1.0")
 
@@ -247,7 +346,7 @@ class TopazVideoAINode:
 
                 all_upscale_params.append({
                     "upscale_factor": upscale_factor,
-                    "upscale_model": upscale_model,
+                    "upscale_model": upscale_id,
                     "compression": compression,
                     "blend": blend
                 })
@@ -297,7 +396,7 @@ class TopazVideoAINode:
                 if target_fps <= 0:
                     raise ValueError("Target FPS must be greater than 0")
 
-                interpolation_filter = f"tvai_fi=model={interpolation_model}:fps={target_fps}"
+                interpolation_filter = f"tvai_fi=model={interpolation_id}:fps={target_fps}"
 
                 ffmpeg_exe = self._get_topaz_ffmpeg_path(topaz_ffmpeg_path)
                 cmd = [
@@ -335,6 +434,7 @@ class TopazVideoAINode:
                     os.remove(f)
                 except OSError:
                     pass
+
 
 NODE_CLASS_MAPPINGS = {
     "TopazVideoAI": TopazVideoAINode,
