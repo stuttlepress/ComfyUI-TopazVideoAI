@@ -4,7 +4,6 @@ import torch
 import subprocess
 import uuid
 from PIL import Image
-import tempfile
 import logging
 import shutil
 from concurrent.futures import ThreadPoolExecutor
@@ -62,10 +61,8 @@ class TopazUpscaleParamsNode:
 
 class TopazVideoAINode:
     def __init__(self):
-        self.base_temp_dir = tempfile.gettempdir()
-        self.output_dir = os.path.join(self.base_temp_dir, "comfyui_topaz_temp")
+        self.output_dir = os.path.join(folder_paths.get_temp_directory(), "topaz")
         os.makedirs(self.output_dir, exist_ok=True)
-        self.temp_files = []
         logger.debug(f"Initialized temp directory at: {self.output_dir}")
         if not CUPY_AVAILABLE:
             logger.warning("CuPy not available. Some GPU operations will be disabled.")
@@ -319,8 +316,6 @@ class TopazVideoAINode:
         input_video = os.path.join(self.output_dir, f"{operation_id}_input.mp4")
         intermediate_video = os.path.join(self.output_dir, f"{operation_id}_intermediate.mp4")
         output_video = os.path.join(self.output_dir, f"{operation_id}_output.mp4")
-        self.temp_files.extend([input_video, intermediate_video, output_video])
-        
         try:
             logger.info(f"Converting image batch to video with input fps {input_fps}...")
             self._batch_to_video(images, input_video, use_gpu, topaz_ffmpeg_path, force_topaz_ffmpeg, input_fps)
@@ -494,6 +489,12 @@ class TopazVideoAINode:
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             raise
+        finally:
+            for f in [input_video, intermediate_video, output_video]:
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
 
 NODE_CLASS_MAPPINGS = {
     "TopazVideoAI": TopazVideoAINode,
