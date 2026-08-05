@@ -527,13 +527,12 @@ class TopazVideoAINode:
                 "-r", str(input_fps),
                 output_path
             ])
-            
+
             logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
+            result = self._run_ffmpeg_with_fallback(cmd, topaz_ffmpeg_path, label="batch_to_video")
+
             if result.returncode != 0:
                 raise RuntimeError(f"FFmpeg error: {result.stderr}")
-            
             if not os.path.exists(output_path):
                 raise FileNotFoundError(f"Output video not created: {output_path}")
                 
@@ -650,6 +649,64 @@ class TopazVideoAINode:
         # 都不可用: 回退 mpeg4 (预览无法播放，但流程能跑完)
         logger.warning("No H.264 encoder available; falling back to mpeg4 (browser preview will not play)")
         return ["-c:v", "mpeg4", "-q:v", "2", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+
+    # 编码器失败时的错误特征 (硬件编码器对分辨率/像素有限制，如 NVENC 消费级卡最大 4096 宽)
+    _ENCODER_FAIL_SIGNATURES = (
+        "exceeds",                  # "Width 4608 exceeds 4096"
+        "No capable devices found", # NVENC 打不开设备
+        "Error while opening encoder",
+        "not support",              # "encoder does not support ..."
+        "Unsupported",
+    )
+
+    def _run_ffmpeg_with_fallback(self, cmd, topaz_ffmpeg_path, label="ffmpeg"):
+        """
+        执行 ffmpeg 命令；若失败且 stderr 提示编码器问题 (如 NVENC 分辨率超限，
+        消费级 N 卡 NVENC 最大支持 4096 宽)，自动把编码参数替换为软件 h264_mf 重试一次。
+        返回最终的 CompletedProcess (重试成功则返回重试的结果)。
+        调用方仍需检查 returncode / stderr。
+        """
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                env=topaz_env_for_subprocess())
+        if result.returncode == 0:
+            return result
+
+        err = result.stderr or ""
+        # 只在错误看起来是编码器能力问题时才回退，避免掩盖其它错误
+        looks_like_encoder_issue = any(sig in err for sig in self._ENCODER_FAIL_SIGNATURES)
+        if not looks_like_encoder_issue:
+            return result
+
+        # 定位并替换编码参数段 [-c:v, encoder, ...] 为软件 h264_mf 参数。
+        # 编码段一定以 "-c:v" 开头；段内参数都是成对的 (-key value) 或带值选项，
+        # 遇到下一个已知的"非编码"ffmpeg 选项即段结束。
+        try:
+            c_v_idx = cmd.index("-c:v")
+        except ValueError:
+            return result
+
+        non_encoder_opts = {"-r", "-an", "-shortest", "-vf", "-filter_complex",
+                            "-i", "-y", "-hide_banner", "-nostdin", "-strict",
+                            "-hwaccel", "-f", "-map", "-ac", "-ar", "-af",
+                            "-c:a"}
+        post_idx = len(cmd)  # 默认: 编码段一直延伸到命令末尾(输出文件前)
+        for i in range(c_v_idx + 1, len(cmd)):
+            if cmd[i] in non_encoder_opts:
+                post_idx = i
+                break
+
+        sw_args = ["-c:v", "h264_mf", "-b:v", "10M",
+                   "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+        new_cmd = cmd[:c_v_idx] + sw_args + cmd[post_idx:]
+
+        last_err_line = err.strip().splitlines()[-1] if err.strip() else "unknown"
+        logger.warning(
+            f"{label}: encoder failed ({last_err_line}); "
+            f"retrying with software h264_mf."
+        )
+        logger.debug(f"Fallback command: {' '.join(new_cmd)}")
+        return subprocess.run(new_cmd, capture_output=True, text=True,
+                              env=topaz_env_for_subprocess())
 
     def _mux_audio(self, video_path, audio, output_path, input_fps, topaz_ffmpeg_path, force_topaz_ffmpeg):
         """
@@ -834,9 +891,9 @@ class TopazVideoAINode:
                 ])
 
                 logger.debug(f"Running FFmpeg upscale command: {' '.join(cmd)}")
-                # 注入修正后的 TVAI_MODEL_DIR，避免旧版残留环境变量导致 'Model not found'
-                result = subprocess.run(cmd, capture_output=True, text=True,
-                                        env=topaz_env_for_subprocess())
+                # 注入修正后的 TVAI_MODEL_DIR，避免旧版残留环境变量导致 'Model not found'。
+                # 用带回退的执行封装: 若硬件编码器因分辨率超限等失败，自动改用软件 h264_mf 重试。
+                result = self._run_ffmpeg_with_fallback(cmd, topaz_ffmpeg_path, label="upscale")
 
                 if result.returncode != 0:
                     error_msg = result.stderr
@@ -899,8 +956,7 @@ class TopazVideoAINode:
                 ])
 
                 logger.debug(f"Running FFmpeg interpolation command: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True,
-                                        env=topaz_env_for_subprocess())
+                result = self._run_ffmpeg_with_fallback(cmd, topaz_ffmpeg_path, label="interpolation")
 
                 if result.returncode != 0:
                     error_msg = result.stderr
