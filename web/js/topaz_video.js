@@ -74,12 +74,31 @@ function addVideoPreview(nodeType) {
         previewWidget.parentEl.style.width = "100%";
         element.appendChild(previewWidget.parentEl);
 
-        // video 元素 (循环播放、默认静音，符合 ComfyUI 预览交互习惯)
+        // video 元素。性能优化要点:
+        //   - controls=false: 原生控制条会和 ComfyUI 画布叠加渲染造成掉帧 (VHS 默认也是 false)
+        //   - preload=auto: 让浏览器尽早缓冲，减少播放时的卡顿
+        //   - playsinline: 移动端兼容
+        //   - willChange 提示浏览器把 video 提升到独立合成层，避免和 litegraph 画布逐帧重绘合成
         previewWidget.videoEl = document.createElement("video");
-        previewWidget.videoEl.controls = true;
+        previewWidget.videoEl.controls = false;
         previewWidget.videoEl.loop = true;
         previewWidget.videoEl.muted = true;
+        previewWidget.videoEl.preload = "auto";
+        previewWidget.videoEl.setAttribute("playsinline", "");
+        previewWidget.videoEl.setAttribute("disablepictureinpicture", "");
         previewWidget.videoEl.style.width = "100%";
+        // 提升到独立图层: 这是解决节点内视频预览掉帧的关键。
+        // ComfyUI 的 litegraph 画布在持续重绘，如果不隔离合成层，video 每帧都要
+        // 和画布重新合成，高分辨率视频会明显掉帧。
+        previewWidget.videoEl.style.willChange = "transform";
+        previewWidget.videoEl.style.transform = "translateZ(0)";
+        // 悬停时才显示控制条，避免常态渲染开销
+        previewWidget.videoEl.addEventListener("mouseenter", () => {
+            previewWidget.videoEl.controls = true;
+        });
+        previewWidget.videoEl.addEventListener("mouseleave", () => {
+            previewWidget.videoEl.controls = false;
+        });
         previewWidget.videoEl.addEventListener("loadedmetadata", () => {
             if (previewWidget.videoEl.videoWidth && previewWidget.videoEl.videoHeight) {
                 previewWidget.aspectRatio =
