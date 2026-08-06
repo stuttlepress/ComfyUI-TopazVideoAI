@@ -708,6 +708,36 @@ class TopazVideoAINode:
         return subprocess.run(new_cmd, capture_output=True, text=True,
                               env=topaz_env_for_subprocess())
 
+    def _probe_video_fps(self, video_path, topaz_ffmpeg_path):
+        """
+        用 ffprobe 探测视频的真实帧率，返回 float (如 24.0) 或 None。
+        用于补帧时获取输入视频的权威帧率，避免依赖可能被设错的 input_fps 参数。
+        """
+        ffprobe = os.path.join(topaz_ffmpeg_path, 'ffprobe.exe')
+        if not os.path.isfile(ffprobe):
+            return None
+        try:
+            # avg_frame_rate 是平均帧率 (总帧数/总时长)，比 r_frame_rate 更可靠
+            r = subprocess.run(
+                [ffprobe, '-v', 'error', '-select_streams', 'v:0',
+                 '-show_entries', 'stream=avg_frame_rate', '-of', 'default=noprint_wrappers=1:nokey=1',
+                 video_path],
+                capture_output=True, text=True, env=topaz_env_for_subprocess(), timeout=30)
+            val = r.stdout.strip()
+            # avg_frame_rate 格式是 "24000/1001" 或 "24/1"
+            if '/' in val:
+                num, den = val.split('/')
+                num, den = float(num), float(den)
+                if den > 0:
+                    return num / den
+            else:
+                f = float(val)
+                if f > 0:
+                    return f
+        except Exception as e:
+            logger.debug(f"probe fps failed: {e}")
+        return None
+
     def _mux_audio(self, video_path, audio, output_path, input_fps, topaz_ffmpeg_path, force_topaz_ffmpeg):
         """
         把 VHS AUDIO ({'waveform': Tensor[1,C,N], 'sample_rate': int}) 合并进无声视频。
@@ -931,11 +961,21 @@ class TopazVideoAINode:
                 current_output = output_video
             
             if enable_interpolation:
-                target_fps = int(input_fps * interpolation_multiplier)
-                logger.info(f"Applying interpolation with input fps {input_fps} and multiplier {interpolation_multiplier} (target fps: {target_fps})")
+                # 补帧的目标 fps = 输入视频真实帧率 × 倍数。
+                # 优先用 ffprobe 探测 current_input 的真实帧率 (权威值)，
+                # 探测失败才回退到用户填的 input_fps 参数。
+                real_fps = self._probe_video_fps(current_input, topaz_ffmpeg_path)
+                base_fps = real_fps if real_fps and real_fps > 0 else float(input_fps)
+                target_fps = int(round(base_fps * interpolation_multiplier))
+                logger.info(f"Applying interpolation: base fps={base_fps} (real={real_fps}, param={input_fps}) "
+                            f"multiplier={interpolation_multiplier} target fps={target_fps}")
                 if target_fps <= 0:
-                    raise ValueError("Target FPS must be greater than 0")
-                
+                    raise ValueError(
+                        f"补帧目标帧率必须大于 0 (当前 target_fps={target_fps}, "
+                        f"base_fps={base_fps}, multiplier={interpolation_multiplier})。"
+                        "请检查节点上的 input_fps 和 interpolation_multiplier 设置。"
+                    )
+
                 interpolation_filter = f"tvai_fi=model={interpolation_model}:fps={target_fps}"
                 
                 ffmpeg_exe = self._get_topaz_ffmpeg_path(topaz_ffmpeg_path, True, force_topaz_ffmpeg)
