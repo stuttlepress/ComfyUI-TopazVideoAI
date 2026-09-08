@@ -1,0 +1,3 @@
+- split into upscale and interpolate
+- store parameter values by name
+- reverse engineer starlight support
